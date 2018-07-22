@@ -9,7 +9,7 @@
   [multC (l : ExprC)
          (r : ExprC)]
   [appC (s : symbol)
-        (arg : ExprC)]
+        (arg : (listof ExprC))]
   [maxC (l : ExprC)  ; Define internal representation
        (r : ExprC)]
   [letC (n : symbol) 
@@ -21,7 +21,7 @@
 
 (define-type FunDefC
   [fdC (name : symbol) 
-       (arg : symbol) 
+       (arg : (listof symbol)) 
        (body : ExprC)])
 
 (define-type Binding
@@ -50,9 +50,6 @@
     [(s-exp-match? '{max ANY ANY} s)  ; Update parser to find this expression
      (maxC (parse (second (s-exp->list s)))
             (parse (third (s-exp->list s))))]
-    [(s-exp-match? '{SYMBOL ANY} s)
-     (appC (s-exp->symbol (first (s-exp->list s)))
-           (parse (second (s-exp->list s))))]
     [(s-exp-match? '{let {[SYMBOL ANY]} ANY} s)
      (let ([bs (s-exp->list (first
                              (s-exp->list (second
@@ -63,13 +60,16 @@
     [(s-exp-match? '{unlet SYMBOL ANY} s)
      (unletC (s-exp->symbol (second (s-exp->list s)))
              (parse (third (s-exp->list s))))]
+    [(s-exp-match? '{SYMBOL ANY ...} s)
+     (appC (s-exp->symbol (first (s-exp->list s)))
+           (map parse (rest (s-exp->list s))))]  ; Map the parser over all remaining arguments
     [else (error 'parse "invalid input")]))
 
 (define (parse-fundef [s : s-expression]) : FunDefC
   (cond
-    [(s-exp-match? '{define {SYMBOL SYMBOL} ANY} s)
+    [(s-exp-match? '{define {SYMBOL ...} ANY} s)
      (fdC (s-exp->symbol (first (s-exp->list (second (s-exp->list s)))))
-          (s-exp->symbol (second (s-exp->list (second (s-exp->list s)))))
+          (map s-exp->symbol (rest (s-exp->list (second (s-exp->list s)))))
           (parse (third (s-exp->list s))))]
     [else (error 'parse-fundef "invalid input")]))
 
@@ -86,7 +86,7 @@
         (plusC (multC (numC 3) (numC 4))
                (numC 8)))
   (test (parse '{double 9})
-        (appC 'double (numC 9)))
+        (appC 'double (list (numC 9))))
   (test (parse '{let {[x {+ 1 2}]}
                   y})
         (letC 'x (plusC (numC 1) (numC 2))
@@ -95,7 +95,7 @@
             "invalid input")
 
   (test (parse-fundef '{define {double x} {+ x x}})
-        (fdC 'double 'x (plusC (idC 'x) (idC 'x))))
+        (fdC 'double (list 'x) (plusC (idC 'x) (idC 'x))))
   (test/exn (parse-fundef '{def {f x} x})
             "invalid input")
 
@@ -114,9 +114,9 @@
     [maxC (l r) (max (interp l env fds) (interp r env fds))]  ; Define the function behaviour
     [appC (s arg) (local [(define fd (get-fundef s fds))]
                     (interp (fdC-body fd)
-                            (extend-env
-                             (bind (fdC-arg fd)
-                                   (interp arg env fds))
+                            (append
+                             (map2 (lambda (name value) (bind name
+                                   (interp value env fds)))  (fdC-arg fd) arg)
                              mt-env)
                             fds))]
     [letC (n rhs body)
@@ -288,3 +288,29 @@ x}}) mt-env
 
 ; Problem 3
 ; multi argument functions
+; For function application on multiple inputs I need to
+; Adjust bind to have all argument names, expressions in scope
+; This is done by recursing on the zipped fdC-arg (names) and the arg declaratoin from appC (Expressions)
+;
+; This method adds a set of variables to the environment
+;(define (extend-env-list [env : Env] [arg-names : (listof symbol)] [values : (listof ExprC)]) : Env
+;  
+;  )
+
+; Test map2 declaration
+(test (map2 (lambda (x y) (+ x y)) (list 1 2 3) (list 2 4 8)) (list 3 6 11))
+; Test map2 over binding
+(test (map2 (lambda (x y) (bind x y)) (list 'x 'y 'z) (list 1 2 3)) (list (bind 'x 1) (bind 'y 2) (bind 'z 3)))
+
+  (test (parse-fundef '{define {double x y z} {+ {+ x y} z}})
+        (fdC 'double (list 'x 'y 'z) (plusC (plusC (idC 'x) (idC 'y)) (idC 'z))))
+
+  (test (interp (parse '{+ {f} {f}})
+                mt-env
+                (list (parse-fundef '{define {f} 5})))
+        10)
+
+  (test (interp (parse '{f 1 2})
+                mt-env
+                (list (parse-fundef '{define {f x y} {+ x y}})))
+        3)
