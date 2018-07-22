@@ -7,7 +7,9 @@
   [closV (arg : symbol)
          (body : ExprC)
          (env : Env)]
-  [boolV (b : boolean)])
+  [boolV (b : boolean)]
+  [thunkV (exp : ExprC)
+          (env : Env)])
 
 (define-type ExprC
   [numC (n : number)]
@@ -22,6 +24,8 @@
   [ifC (conditional : ExprC)
        (true-branch : ExprC)
        (false-branch : ExprC)]
+  [delayC (exp : ExprC)]
+  [forceC (exp : ExprC)]
   [letC (n : symbol) 
         (rhs : ExprC)
         (body : ExprC)]
@@ -62,6 +66,10 @@
      (ifC (parse (second (s-exp->list s)))
           (parse (third (s-exp->list s)))
           (parse (fourth (s-exp->list s))))]
+    [(s-exp-match? '{delay ANY} s)
+     (delayC (parse (second (s-exp->list s))))]
+    [(s-exp-match? '{force ANY} s)
+     (forceC (parse (second (s-exp->list s))))]
     [(s-exp-match? '{let {[SYMBOL ANY]} ANY} s)
      (let ([bs (s-exp->list (first
                              (s-exp->list (second
@@ -117,6 +125,12 @@
            [(not (boolV? (interp conditional env))) (error 'interp "not a boolean")]
            [(boolV-b (interp conditional env)) (interp true-branch env)]
            [else (interp false-branch env)])]
+    [delayC (exp) (thunkV exp env)]
+    [forceC (exp)
+              (let ([res (interp exp env)])
+              (cond
+                [(not (thunkV? res)) (error 'interp "not a thunk")]
+                [else (interp (thunkV-exp res) (thunkV-env res))]))]
     [letC (n rhs body)
           (interp body
                   (extend-env
@@ -269,3 +283,20 @@
                     mt-env)
             "not a boolean")
 
+; Problem 2
+  (test/exn (interp (parse '{force 1})
+                    mt-env)
+"not a thunk")
+
+(test (interp (parse '{force {if {= 8 8} {delay 7} {delay 9}}})
+              mt-env)
+      (interp (parse '7)
+              mt-env))
+
+(test (interp (parse '{let {[d {let {[y 8]}
+                                 {delay {+ y 7}}}]}
+                        {let {[y 9]}
+                          {force d}}})
+              mt-env)
+      (interp (parse '15)
+mt-env))
