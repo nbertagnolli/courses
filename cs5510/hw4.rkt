@@ -29,8 +29,9 @@
   [unboxC (arg : ExprC)]
   [setboxC (bx : ExprC)
            (val : ExprC)]
-  [beginC (l : ExprC)
-          (r : ExprC)])
+;  [beginC (l : ExprC)
+;          (r : ExprC)]
+  [beginC (lst : (listof ExprC))])
 
 (define-type Binding
   [bind (name : symbol)
@@ -84,9 +85,11 @@
     [(s-exp-match? '{set-box! ANY ANY} s)
      (setboxC (parse (second (s-exp->list s)))
               (parse (third (s-exp->list s))))]
-    [(s-exp-match? '{begin ANY ANY} s)
-     (beginC (parse (second (s-exp->list s)))
-             (parse (third (s-exp->list s))))]
+;    [(s-exp-match? '{begin ANY ANY} s)
+;     (beginC (parse (second (s-exp->list s)))
+;             (parse (third (s-exp->list s))))]
+    [(s-exp-match? '{begin ANY ...} s)
+     (beginC (map parse (rest (s-exp->list s))))]
     [(s-exp-match? '{ANY ANY} s)
      (appC (parse (first (s-exp->list s)))
            (parse (second (s-exp->list s))))]
@@ -119,7 +122,7 @@
   (test (parse '{set-box! b 0})
         (setboxC (idC 'b) (numC 0)))
   (test (parse '{begin 1 2})
-        (beginC (numC 1) (numC 2)))
+        (beginC (list (numC 1) (numC 2))))
   (test/exn (parse '{{+ 1 2}})
             "invalid input"))
 
@@ -184,9 +187,27 @@
                               (override-store (cell l v-v)
                                               (remove-element sto-v l)))]  ; Remove duplicates here!
                    [else (error 'interp "not a box")])))]
-    [beginC (l r)
-            (with [(v-l sto-l) (interp l env sto)]
-              (interp r env sto-l))]))
+;    [beginC (l r)
+;            (with [(v-l sto-l) (interp l env sto)]
+;              (interp r env sto-l))]
+    [beginC (lst)
+            (begin-recursive lst env sto)]
+    ))
+
+
+;(define-syntax-rule
+;  (with [(v-id sto-id) call]
+;    body)
+;  (type-case Result call
+;    [v*s (v-id sto-id) body]))
+
+(define (begin-recursive [lst : (listof ExprC)] [env : Env] [sto : (listof Storage)]) : Result
+  (cond
+    [(empty? (rest lst)) (interp (first lst) env sto)]
+    [else (begin-recursive (rest lst) env (v*s-s (interp (first lst) env sto)))])
+  ;(with [(v-l sto-l) (interp (first lst) env sto)]
+  ;      (interp (second lst) env sto-l))
+  )
 
 (module+ test
   (test (interp (parse '2) mt-env mt-store)
@@ -389,3 +410,17 @@
 
 ; Problem 2
 ; Generalize begin to allow one or more sub-expressions, instead of exactly two sub-expressions
+; Just adjust it to accept a list of input
+
+
+(test (interp (parse '{let {[b {box 1}]}
+                        {begin
+                          {set-box! b {+ 2 {unbox b}}}
+                          {set-box! b {+ 3 {unbox b}}}
+                          {set-box! b {+ 4 {unbox b}}}
+                          {unbox b}}})
+              mt-env
+              mt-store)
+      (v*s (numV 10)
+           (override-store (cell 1 (numV 10))
+                           mt-store)))
