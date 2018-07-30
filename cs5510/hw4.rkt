@@ -38,9 +38,9 @@
            (args : (listof ExprC))]
   [getC (rec : ExprC)
         (n : symbol)]
-;  [setC (rec : ExprC)
-;        (n : symbol)
-;        (val : ExprC)]
+  [setC (rec : ExprC)
+        (n : symbol)
+        (val : ExprC)]
   )
 
 (define-type Binding
@@ -112,6 +112,10 @@
                    (rest (s-exp->list s))))]
     [(s-exp-match? '{get ANY SYMBOL} s)
      (getC (parse (second (s-exp->list s))) (s-exp->symbol (third (s-exp->list s))))]
+    [(s-exp-match? '{set ANY SYMBOL ANY} s)
+     (setC (parse (second (s-exp->list s)))
+           (s-exp->symbol (third (s-exp->list s)))
+           (parse (fourth (s-exp->list s))))]
     [(s-exp-match? '{ANY ANY} s)
      (appC (parse (first (s-exp->list s)))
            (parse (second (s-exp->list s))))]
@@ -209,9 +213,6 @@
                               (override-store (cell l v-v)
                                               (remove-element sto-v l)))]  ; Remove duplicates here!
                    [else (error 'interp "not a box")])))]
-;    [beginC (l r)
-;            (with [(v-l sto-l) (interp l env sto)]
-;              (interp r env sto-l))]
     [beginC (lst)
             (begin-recursive lst env sto)]
     [recordC (ns vs)
@@ -220,14 +221,11 @@
     [getC (r n)
           (with [(v-l sto-l) (interp r env sto)]
                 (v*s  (find n (recV-ns v-l) (recV-vs v-l)) sto))]
-;    [setC (r n v)
-;          (type-case Value (interp r env)
-;            [recV (ns vs)
-;                  ... (update n (interp v env)
-;                              ns
-;                              vs) ...]
-;                  ... (interp v env) ...]
-;            [else (error 'interp "not a record")])]
+    [setC (r n v)
+          (with [(v-l sto-l) (interp r env sto)]
+                (type-case Value v-l
+                  [recV (ns vs) (v*s (recV ns (update n (v*s-v (interp v env sto-l)) ns vs)) sto-l)]
+                  [else (error 'interp "not a record")]))]
     ))
 
 ; Step through every value running the interpreter on each of them and output a List of Values
@@ -492,6 +490,34 @@
                 [val : Value]
                 [names : (listof symbol)]
                 [vals : (listof Value)]) : (listof Value)
-  (list (numV 1))
+    (cond
+    [(equal? name (first names)) (cons val (rest vals))]
+    [else (cons (first vals) (update name val (rest names) (rest vals)))])
   )
+
+(test (update 'y (numV 4) (list 'x 'y' z) (list (numV 1) (numV 2) (numV 3)))
+      (list (numV 1) (numV 4) (numV 3)))
+
+; Test that set is working on a record
+(test (interp (parse '{let {[r {record {x 1}}]}
+                          {set r x 5}}) mt-env mt-store)
+      (v*s (recV (list 'x) (list (numV 5))) mt-store))
+
+; Test that set works inside of a begin
+(test (interp (parse '{let {[r {record {x 1}}]}
+                        {begin
+                          {set r x 5}}}) mt-env mt-store)
+      (v*s (recV (list 'x) (list (numV 5))) mt-store))
+
+(test (interp (parse '{let {[r {record {x 1}}]}
+                        {begin
+                          {set r x 5}
+                          {set r x 6}}}) mt-env mt-store)
+      (v*s (recV (list 'x) (list (numV 6))) mt-store))
+
+(test (interp (parse '{let {[r {record {x 1}}]}
+                        {begin
+                          {set r x 5}
+                          {get r x}}}) mt-env mt-store)
+      (v*s (numV 5) mt-store))
 
