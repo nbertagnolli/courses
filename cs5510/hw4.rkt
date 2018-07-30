@@ -9,6 +9,8 @@
   [closV (arg : symbol)
          (body : ExprC)
          (env : Env)]
+  [recV (ns : (listof symbol))
+        (vs : (listof Value))]
   [boxV (l : Location)])
 
 (define-type ExprC
@@ -31,7 +33,15 @@
            (val : ExprC)]
 ;  [beginC (l : ExprC)
 ;          (r : ExprC)]
-  [beginC (lst : (listof ExprC))])
+  [beginC (lst : (listof ExprC))]
+  [recordC (ns : (listof symbol))
+           (args : (listof ExprC))]
+  [getC (rec : ExprC)
+        (n : symbol)]
+;  [setC (rec : ExprC)
+;        (n : symbol)
+;        (val : ExprC)]
+  )
 
 (define-type Binding
   [bind (name : symbol)
@@ -90,6 +100,18 @@
 ;             (parse (third (s-exp->list s))))]
     [(s-exp-match? '{begin ANY ...} s)
      (beginC (map parse (rest (s-exp->list s))))]
+    [(s-exp-match? '{record {SYMBOL ANY} ...} s)
+     (recordC (map (lambda (l)  ; Map over Names
+                     (s-exp->symbol
+                      (first (s-exp->list l))))
+                   (rest (s-exp->list s)))
+              ; Map over the values and parse their subexpressions
+              (map (lambda (l)
+                     (parse
+                      (second (s-exp->list l))))
+                   (rest (s-exp->list s))))]
+    [(s-exp-match? '{get ANY SYMBOL} s)
+     (getC (parse (second (s-exp->list s))) (s-exp->symbol (third (s-exp->list s))))]
     [(s-exp-match? '{ANY ANY} s)
      (appC (parse (first (s-exp->list s)))
            (parse (second (s-exp->list s))))]
@@ -192,21 +214,34 @@
 ;              (interp r env sto-l))]
     [beginC (lst)
             (begin-recursive lst env sto)]
+    [recordC (ns vs)
+             (v*s (recV ns
+                   (record-recursive vs env sto)) sto)]
+    [getC (r n)
+          (with [(v-l sto-l) (interp r env sto)]
+                (v*s  (find n (recV-ns v-l) (recV-vs v-l)) sto))]
+;    [setC (r n v)
+;          (type-case Value (interp r env)
+;            [recV (ns vs)
+;                  ... (update n (interp v env)
+;                              ns
+;                              vs) ...]
+;                  ... (interp v env) ...]
+;            [else (error 'interp "not a record")])]
     ))
 
+; Step through every value running the interpreter on each of them and output a List of Values
+(define (record-recursive [lst : (listof ExprC)] [env : Env] [sto : (listof Storage)]) : (listof Value)
+  (cond
+    [(empty? (rest lst)) (list (v*s-v (interp (first lst) env sto)))]
+    [else (cons (v*s-v (interp (first lst) env sto)) (record-recursive (rest lst) env (v*s-s (interp (first lst) env sto))))])
+  )
 
-;(define-syntax-rule
-;  (with [(v-id sto-id) call]
-;    body)
-;  (type-case Result call
-;    [v*s (v-id sto-id) body]))
 
 (define (begin-recursive [lst : (listof ExprC)] [env : Env] [sto : (listof Storage)]) : Result
   (cond
     [(empty? (rest lst)) (interp (first lst) env sto)]
     [else (begin-recursive (rest lst) env (v*s-s (interp (first lst) env sto)))])
-  ;(with [(v-l sto-l) (interp (first lst) env sto)]
-  ;      (interp (second lst) env sto-l))
   )
 
 (module+ test
@@ -424,3 +459,39 @@
       (v*s (numV 10)
            (override-store (cell 1 (numV 10))
                            mt-store)))
+
+
+; Problem 3
+; Extend Record to support named fields
+
+(define (find [name : symbol] [names : (listof symbol)] [vals : (listof Value)]) : Value
+  (cond
+    [(equal? name (first names)) (first vals)]
+    [else (find name (rest names) (rest vals))])
+  )
+
+(test (find 'x (list 'x 'y 'z) (list (numV 1) (numV 2) (numV 3))) (numV 1))
+
+; Test that we can create a single Record
+(test (interp (parse '{record {x 1}}) mt-env mt-store) (v*s (recV (list 'x) (list (numV 1))) mt-store))
+
+; Test get on a simple single record case
+(test (interp (parse '{let {[r {record {x 1}}]}
+                        {get r x}}) mt-env mt-store)
+      (v*s (numV 1) mt-store))
+
+; Test get on a multi record case
+(test (interp (parse '{let {[r {record {y 2} {x 1}}]}
+                        {get r x}}) mt-env mt-store)
+      (v*s (numV 1) mt-store))
+
+
+; Problem 4
+; Add set to Record functionality
+(define (update [name : symbol]
+                [val : Value]
+                [names : (listof symbol)]
+                [vals : (listof Value)]) : (listof Value)
+  (list (numV 1))
+  )
+
