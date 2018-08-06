@@ -237,11 +237,36 @@
 
 
 ; Problem 2
-(define plus '{lambda {x} {lambda {y} {+ y x}}})
+(define plus '{lambda {x} {lambda {y} {+ x y}}})
 
 (test (interp (parse (list->s-exp (list `+ '1 '2))) mt-env)
       (interp (parse (list->s-exp (list (list->s-exp (list plus '1)) '2))) mt-env))
 
 (test (interp (parse (list->s-exp (list `+ '10 '2))) mt-env)
       (interp (parse (list->s-exp (list (list->s-exp (list plus '10)) '2))) mt-env))
+
+; Problem 3
+; Define multiplication with recursive addition using letrec
+; Here is a proof of concept
+(interp (parse '{letrec {[f {lambda {x} {lambda {y}
+                                          {if0 x
+                                               0
+                                               {+ {{f {+ x -1}} y} y}}}}]}
+                  {{f 3} 4}})
+              mt-env)
+
+; Now officially define it
+(define times '{lambda {a} {lambda {b}
+                             {letrec {[f {lambda {x} {lambda {y}
+                                          {if0 x
+                                               0
+                                               {+ {{f {+ x -1}} y} y}}}}]}
+                  {{f a} b}}
+                             }})
+
+; Testing
+(test (interp (parse (list->s-exp (list (list->s-exp (list times '1)) '2))) mt-env)
+      (numV (* 1 2)))
+(test (interp (parse (list->s-exp (list (list->s-exp (list times '3)) '4))) mt-env)
+      (numV (* 3 4)))
 
