@@ -235,3 +235,13 @@
               mt-env)
       (numV  -10))
 
+
+; Problem 2
+(define plus '{lambda {x} {lambda {y} {+ y x}}})
+
+(test (interp (parse (list->s-exp (list `+ '1 '2))) mt-env)
+      (interp (parse (list->s-exp (list (list->s-exp (list plus '1)) '2))) mt-env))
+
+(test (interp (parse (list->s-exp (list `+ '10 '2))) mt-env)
+      (interp (parse (list->s-exp (list (list->s-exp (list plus '10)) '2))) mt-env))
+
