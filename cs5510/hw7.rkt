@@ -20,7 +20,8 @@
   [appC (fun : ExprC)
         (args : (listof ExprC))]
   [let/ccC (n : symbol)
-           (body : ExprC)])
+           (body : ExprC)]
+  [negC (n : ExprC)])
 
 (define-type Binding
   [bind (name : symbol)
@@ -48,7 +49,8 @@
            (env : Env)
            (k : Cont)]
   [doAppK (f : Value)
-          (k : Cont)])
+          (k : Cont)]
+  [negK])
 
 (module+ test
   (print-only-errors true))
@@ -78,6 +80,8 @@
     [(s-exp-match? '{let/cc SYMBOL ANY} s)
      (let/ccC (s-exp->symbol (second (s-exp->list s)))
               (parse (third (s-exp->list s))))]
+    [(s-exp-match? '{neg ANY} s)
+     (negC (parse (second (s-exp->list s))))]
     [(s-exp-match? '{ANY ANY} s)
      (appC (parse (first (s-exp->list s)))
            (map parse (rest (s-exp->list s))))]
@@ -125,11 +129,13 @@
              (interp body
                      (extend-env (bind n (contV k))
                                  env)
-                     k)]))
+                     k)]
+    [negC (n) (continue (negK) (interp n env k))]))
 
 (define (continue [k : Cont] [v : Value]) : Value
   (type-case Cont k
     [doneK () v]
+    [negK () (num* (numV -1) v)]
     [addSecondK (r env next-k)
                 (interp r env
                         (doAddK v next-k))]
@@ -276,4 +282,18 @@
                     (bind 'x (numV 9))
                     (extend-env (bind 'y (numV 8)) mt-env)))
         (numV 8)))
-  
+
+; Homework tests
+(define (interp-expr [input : ExprC]) : s-expression
+  (type-case Value (interp input  mt-env (doneK))
+    [numV (n) (number->s-exp n)]
+    [contV (k) (symbol->s-exp 'function)]
+    [closV (arg body env) (symbol->s-exp 'function)]
+    ))
+
+; Problem 1
+(test (interp-expr (parse '{neg 2}))
+      '-2)
+
+(test (interp-expr (parse '{avg 0 6 6}))
+      '4)
