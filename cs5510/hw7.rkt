@@ -21,7 +21,11 @@
         (args : (listof ExprC))]
   [let/ccC (n : symbol)
            (body : ExprC)]
-  [negC (n : ExprC)])
+  [negC (n : ExprC)]
+  [avgC (n1 : ExprC)
+        (n2 : ExprC)
+        (n3 : ExprC)
+        ])
 
 (define-type Binding
   [bind (name : symbol)
@@ -50,7 +54,19 @@
            (k : Cont)]
   [doAppK (f : Value)
           (k : Cont)]
-  [negK])
+   [negK ]
+  [doNegK (r : ExprC)
+          (e : Env)
+          (k : Cont)]
+  [doAvgK (v : Value)
+          (k : Cont)]
+  [avgSecondK (r : ExprC)
+              (e : Env)
+              (k : Cont)]
+  [avgThirdK (r : ExprC)
+             (e : Env)
+             (k : Cont)]
+  )
 
 (module+ test
   (print-only-errors true))
@@ -80,8 +96,13 @@
     [(s-exp-match? '{let/cc SYMBOL ANY} s)
      (let/ccC (s-exp->symbol (second (s-exp->list s)))
               (parse (third (s-exp->list s))))]
+    ; Problem 1
     [(s-exp-match? '{neg ANY} s)
      (negC (parse (second (s-exp->list s))))]
+    [(s-exp-match? '{avg ANY ANY ANY} s)
+     (avgC (parse (second (s-exp->list s)))
+           (parse (third (s-exp->list s)))
+           (parse (fourth (s-exp->list s))))]
     [(s-exp-match? '{ANY ANY} s)
      (appC (parse (first (s-exp->list s)))
            (map parse (rest (s-exp->list s))))]
@@ -130,12 +151,31 @@
                      (extend-env (bind n (contV k))
                                  env)
                      k)]
-    [negC (n) (continue (negK) (interp n env k))]))
+    ; Problem 1
+    ; [negC (n) (continue (negK) (interp n env k))]
+    [negC (n) (interp n env (negK))]
+    ;[negC (n) (interp n env (doNegK n env k))]
+    ;[negC (n) (continue (doNegK n env k) (numV 1))]
+    [avgC (n1 n2 n3) (interp n1 env
+                         (avgSecondK n2 env
+                                     (avgThirdK n3 env k)))]))
 
 (define (continue [k : Cont] [v : Value]) : Value
   (type-case Cont k
     [doneK () v]
     [negK () (num* (numV -1) v)]
+    [doNegK (n env next-k)
+            (interp n env (negK))]
+    ;    [negK (n env next-k)
+    ;          (interp n env (negK v next-k))]
+    [avgSecondK (r env next-k)
+                (interp r env
+                        (doAddK v next-k))]
+    [avgThirdK (r env next-k)
+                (interp r env
+                        (doAvgK v next-k))]
+    [doAvgK (v-l next-k)
+            (continue next-k (num/ (num+ v-l v) (numV 3)))]
     [addSecondK (r env next-k)
                 (interp r env
                         (doAddK v next-k))]
@@ -253,12 +293,16 @@
   (num-op + l r))
 (define (num* [l : Value] [r : Value]) : Value
   (num-op * l r))
+(define (num/ [l : Value] [r : Value]) : Value
+  (num-op / l r))
 
 (module+ test
   (test (num+ (numV 1) (numV 2))
         (numV 3))
   (test (num* (numV 2) (numV 3))
-        (numV 6)))
+        (numV 6))
+  (test (num/ (numV 6) (numV 3))
+        (numV 2)))
 
 ;; lookup ----------------------------------------
 (define (lookup [n : symbol] [env : Env]) : Value
@@ -294,6 +338,20 @@
 ; Problem 1
 (test (interp-expr (parse '{neg 2}))
       '-2)
+;(test (interp-expr (parse '{+ 1 {neg 2}}))
+;      '-1)
+;(test (interp-expr (parse '{+ 1 {neg {+ 2 3}}}))
+;      '-4)
+(test (interp-expr (parse '{let/cc k {neg {k 3}}}))
+      '3)
 
-(test (interp-expr (parse '{avg 0 6 6}))
-      '4)
+(test (interp-expr (parse '{avg 0 6 9}))
+      '5)
+(test (interp-expr (parse '{let/cc k {avg 0 {k 3} 0}}))
+      '3)
+(test (interp-expr (parse '{let/cc k {avg {k 2} {k 3} 0}}))
+      '2)
+(test (interp-expr (parse '{if0 1 2 3}))
+      '3)
+(test (interp-expr (parse '{if0 0 2 3}))
+      '2)
