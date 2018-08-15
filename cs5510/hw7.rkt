@@ -24,8 +24,11 @@
   [negC (n : ExprC)]
   [avgC (n1 : ExprC)
         (n2 : ExprC)
-        (n3 : ExprC)
-        ])
+        (n3 : ExprC)]
+  [if0C (tst : ExprC)
+        (thn : ExprC)
+        (els : ExprC)]
+  )
 
 (define-type Binding
   [bind (name : symbol)
@@ -66,7 +69,16 @@
   [avgThirdK (r : ExprC)
              (e : Env)
              (k : Cont)]
+  [doIf0 (thn : ExprC)
+         (els : ExprC)
+         (e : Env)
+         (k : Cont)]
   )
+
+(define (num-zero? [v : Value]) : boolean
+  (type-case Value v
+    [numV (n) (zero? n)]
+    [else (error 'interp "not a number")]))
 
 (module+ test
   (print-only-errors true))
@@ -101,6 +113,10 @@
      (negC (parse (second (s-exp->list s))))]
     [(s-exp-match? '{avg ANY ANY ANY} s)
      (avgC (parse (second (s-exp->list s)))
+           (parse (third (s-exp->list s)))
+           (parse (fourth (s-exp->list s))))]
+    [(s-exp-match? '{if0 ANY ANY ANY} s)
+     (if0C (parse (second (s-exp->list s)))
            (parse (third (s-exp->list s)))
            (parse (fourth (s-exp->list s))))]
     [(s-exp-match? '{ANY ANY} s)
@@ -154,11 +170,17 @@
     ; Problem 1
     ; [negC (n) (continue (negK) (interp n env k))]
     [negC (n) (interp n env (negK))]
-    ;[negC (n) (interp n env (doNegK n env k))]
-    ;[negC (n) (continue (doNegK n env k) (numV 1))]
     [avgC (n1 n2 n3) (interp n1 env
-                         (avgSecondK n2 env
-                                     (avgThirdK n3 env k)))]))
+                             (avgSecondK n2 env
+                                         (avgThirdK n3 env k)))]
+    [if0C (tst thn els)
+          (interp tst env (doIf0 thn els env k))
+          ;(if (num-zero? (interp tst env k))
+          ;           (interp thn env (doIf0))
+          ;            (interp els env (k))
+          ;            )
+          ]
+    ))
 
 (define (continue [k : Cont] [v : Value]) : Value
   (type-case Cont k
@@ -166,8 +188,10 @@
     [negK () (num* (numV -1) v)]
     [doNegK (n env next-k)
             (interp n env (negK))]
-    ;    [negK (n env next-k)
-    ;          (interp n env (negK v next-k))]
+    [doIf0 (thn els env next-k)
+           (if (num-zero? v)
+               (interp thn env (doneK))
+               (interp els env (doneK)))]
     [avgSecondK (r env next-k)
                 (interp r env
                         (doAddK v next-k))]
@@ -355,3 +379,5 @@
       '3)
 (test (interp-expr (parse '{if0 0 2 3}))
       '2)
+(test (interp-expr (parse '{let/cc k {if0 {k 9} 2 3}}))
+      '9)
