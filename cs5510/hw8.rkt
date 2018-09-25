@@ -23,8 +23,8 @@
           (class-name : symbol)
           (method-name : symbol)
           (arg-expr : ExprC)]
-  ;[selectC (field-position : ExprC)
-  ;         (obj-expr : ExprC)]
+  [selectC (field-position : ExprC)
+           (obj-expr : ExprC)]
   )
 
 (define-type ClassC
@@ -49,9 +49,8 @@
 (define (make-find [name-of : ('a -> symbol)])
   (lambda ([name : symbol] [vals : (listof 'a)]) : 'a
           (cond
-           ;[(equal? name 'object) (classC 'object empty empty)]
            [(empty? vals)
-            (error 'find "not found")]
+            (error 'find (symbol->string name))]
            [else (if (equal? name (name-of (first vals)))
                      (first vals)
                      ((make-find name-of) name (rest vals)))])))
@@ -122,14 +121,20 @@
                          (call-method class-name method-name classes
                                       obj arg-val)]
                    [else (error 'interp "not an object")]))]
-;        [selectC (field-position obj-expr)
-;              (type-case Value (recur obj-expr)
-;                [objV (class-name field-vals)
-;                      (type-case ClassC (find-class class-name classes)
-;                        [classC (name field-names methods)
-;                                (get-field field-name field-names 
-;                                           field-vals)])]
-;                 [else (error 'interp "not an object")])]
+        [selectC (field-position obj-expr)
+                 (type-case Value (recur obj-expr)
+                   [objV (class-name field-vals)
+                         (type-case ClassC (find-class class-name classes)
+                           [classC (name field-names methods)
+                                   (cond
+                                         [(equal? (numV-n (recur field-position)) 0)
+                                          (get-field 'zero field-names
+                                                     field-vals)]
+                                         [(> (numV-n (recur field-position)) 0)
+                                          (get-field 'nonzero field-names
+                                                     field-vals)
+                                          ])])]
+                   [else (error 'interp "not an object")])]
         [ssendC (obj-expr class-name method-name arg-expr)
                 (local [(define obj (recur obj-expr))
                         (define arg-val (recur arg-expr))]
@@ -251,7 +256,10 @@
          (method-name : symbol)
          (arg-expr : ExprI)]
   [superI (method-name : symbol)
-          (arg-expr : ExprI)])
+          (arg-expr : ExprI)]
+  [selectI (field-position : ExprI)
+           (obj-expr : ExprI)]
+  )
 
 (define-type ClassI
   [classI (name : symbol)
@@ -285,6 +293,8 @@
              (sendC (recur expr)
                     method-name
                     (recur arg-expr))]
+      [selectI (field-position expr)
+               (selectC (recur field-position) (recur expr))]
       [superI (method-name arg-expr)
               (ssendC (thisC)
                       super-name
@@ -556,6 +566,9 @@
     (sendI (parse (second (s-exp->list s)))
            (s-exp->symbol (third (s-exp->list s)))
            (parse (fourth (s-exp->list s))))]
+   [(s-exp-match? '{select ANY ANY} s)
+    (selectI (parse (second (s-exp->list s)))
+          (parse (third (s-exp->list s))))]
    [(s-exp-match? '{super SYMBOL ANY} s)
     (superI (s-exp->symbol (second (s-exp->list s)))
             (parse (third (s-exp->list s))))]
